@@ -1,13 +1,6 @@
 import requests
-import json
 
 INATURALIST_URL = "https://api.inaturalist.org/v1/taxa"
-
-params = {
-    "q": "kangaroo",
-    "rank": "species",
-    "per_page": 20
-}
 
 
 def extract_images(taxon):
@@ -16,7 +9,11 @@ def extract_images(taxon):
     if not photo:
         return []
 
-    return [url for url in [photo.get("medium_url"), photo.get("large_url")] if url]
+    return [
+        url for url in
+        [photo.get("medium_url"), photo.get("large_url")]
+        if url
+    ]
 
 
 def safe_join(items):
@@ -26,25 +23,23 @@ def safe_join(items):
     return ", ".join(items)
 
 
-def main():
+def fetch_species(query: str, per_page: int = 20):
+    params = {
+        "q": query,
+        "rank": "species",
+        "per_page": per_page
+    }
+
     try:
         response = requests.get(INATURALIST_URL, params=params, timeout=10)
         response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Error: {e}")
-        return
-
-    try:
         data = response.json()
-    except ValueError:
-        print("Error: Response is not valid JSON.")
-        return
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
 
     filtered = []
 
     for item in data.get("results", []):
-        images = extract_images(item)
-        
         filtered.append({
             "gbif_key": item.get("id", ""),
             "scientific_name": item.get("name"),
@@ -53,15 +48,11 @@ def main():
             "habitats": safe_join(item.get("habitats") or []),
             "threat_statuses": safe_join(item.get("threatened") or []),
             "vernacular_name": item.get("preferred_common_name"),
-            "image_urls": images
+            "image_urls": extract_images(item)
         })
 
-    print("Filtered Results:\n")
-    for r in filtered:
-        print(json.dumps(r, ensure_ascii=False, indent=2))
-
-    print(f"\nTotal records found: {len(filtered)}")
-
-
-if __name__ == "__main__":
-    main()
+    return {
+        "query": query,
+        "count": len(filtered),
+        "results": filtered
+    }
