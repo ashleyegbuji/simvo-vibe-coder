@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Species Catalog</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to bottom right, #a8edea, #fed6e3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 500px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #555;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            width: 70%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #6c5b7b;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #8a79a6;
+        }
+        #result {
+            margin-top: 20px;
+            text-align: left;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Species Catalog</h1>
+        <h2>Find Info About Any Species</h2>
+
+        <!-- Form -->
+        <form id="speciesForm">
+    <input type="text" name="name" placeholder="Enter species name" required>
+    <br>
+    <button type="submit">Search</button>
+</form>
+
+<div id="result"></div>
+
+<script>
+const form = document.getElementById("speciesForm");
+const resultDiv = document.getElementById("result");
+
+form.addEventListener("submit", async function(e) {
+    e.preventDefault(); // <-- prevent page reload
+
+    const speciesName = document.querySelector('input[name="name"]').value;
+
+    alert("Hi"); // <-- your alert
+
+    try {
+        const response = await fetch(`/species?name=${encodeURIComponent(speciesName)}`);
+        const data = await response.json();
+
+        // Display JSON results nicely
+        resultDiv.innerHTML = data.image_urls
+            .map(url => `<img src="${url}" alt="${speciesName}" style="width:150px;margin:5px;">`)
+            .join("");
+    } catch (err) {
+        resultDiv.innerHTML = "<p style='color:red;'>Error fetching species info</p>";
+        console.error(err);
+    }
+});
+</script></div>
+</body>
+</html>
