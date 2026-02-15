@@ -10,10 +10,8 @@ body {
     background: linear-gradient(to bottom right, #f7c1d3, #ffd6e0);
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    min-height: 100vh;
+    padding: 50px 0;
     margin: 0;
-    padding-top: 50px;
 }
 .container {
     text-align: center;
@@ -24,21 +22,16 @@ body {
     width: 95%;
     max-width: 900px;
 }
-h1 {
-    color: #b83280;
-    margin-bottom: 10px;
-}
-h2 {
-    color: #b83280;
-    margin-bottom: 20px;
-}
+h1, h2 { color: #b83280; }
+h2 { margin-bottom: 20px; }
 input[type="text"] {
-    padding: 12px;
-    width: 80%;
+    padding: 15px;
+    width: 85%;
     border: 1px solid #ccc;
     border-radius: 8px;
     margin-top: 10px;
     background-color: #ffe0eb;
+    font-size: 16px;
 }
 button {
     padding: 12px 25px;
@@ -50,23 +43,44 @@ button {
     margin-top: 10px;
 }
 button:hover { background-color: #e754b7; }
-#loading { font-weight: bold; margin-top: 15px; color: #b83280; }
+#loading {
+    display: none;
+    font-weight: bold;
+    margin: 15px 0;
+    color: #b83280;
+}
 .species-card {
-    text-align: left;
     border: 1px solid #ddd;
     border-radius: 8px;
-    padding: 15px;
-    margin-top: 20px;
+    padding: 10px;
+    margin: 15px 0;
+    text-align: center;
+    background-color: #fff0f5;
 }
-.species-card img {
-    max-width: 200px;
-    margin: 5px;
-    border-radius: 5px;
-}
+.species-card h4 { margin: 10px 0 5px; }
+.species-card p { font-size: 14px; margin: 5px 0; }
 .carousel {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    overflow-x: auto;
+    gap: 10px;
+    padding: 10px 0;
+}
+.carousel img {
+    max-width: 150px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+}
+.carousel img.loaded {
+    opacity: 1;
+}
+.carousel::-webkit-scrollbar {
+    height: 6px;
+}
+.carousel::-webkit-scrollbar-thumb {
+    background-color: #b83280;
+    border-radius: 3px;
 }
 </style>
 </head>
@@ -79,56 +93,86 @@ button:hover { background-color: #e754b7; }
         <br>
         <button type="submit">Search</button>
     </form>
-    <div id="loading" style="display:none;">Loading...</div>
+    <div id="loading">🔄 Loading species data...</div>
     <div id="result"></div>
 </div>
 
 <script>
-const form = document.getElementById("speciesForm");
-const resultDiv = document.getElementById("result");
-const loadingDiv = document.getElementById("loading");
+// Progressive image loader
+function loadImageAsync(img, url) {
+    const temp = new Image();
+    temp.src = url;
+    temp.onload = () => {
+        img.src = url;
+        img.classList.add('loaded');
+    };
+}
 
-form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    resultDiv.innerHTML = "";
-    loadingDiv.style.display = "block";
+async function runSearch(e) {
+    if (e && e.preventDefault) e.preventDefault();
 
-    const speciesName = document.querySelector('input[name="name"]').value;
+    const query = document.querySelector("input[name='name']").value.trim();
+    if (!query) return;
+
+    const loadingEl = document.getElementById("loading");
+    const resultsContainer = document.getElementById("result");
+    loadingEl.style.display = "block";
+    resultsContainer.innerHTML = "";
 
     try {
-        const response = await fetch(`/species?name=${encodeURIComponent(speciesName)}`);
-        const data = await response.json();
-        loadingDiv.style.display = "none";
+        const res = await fetch(`/species?name=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
 
-        if(data.error){
-            resultDiv.innerHTML = `<p style="color:red;"><b>${data.error}</b></p>`;
+        const items = Array.isArray(data.data) ? data.data : [];
+        if (!items.length) {
+            resultsContainer.innerHTML = "<div>No results found.</div>";
             return;
         }
 
-        data.groups.forEach(group => {
-            const familyCard = document.createElement("div");
-            familyCard.className = "species-card";
-            let html = `<h3>Family: ${group.family}</h3>`;
+        for (const animal of items) {
+            const card = document.createElement("div");
+            card.className = "species-card";
 
-            group.species.forEach(species => {
-                let imgs = species.image_urls.map(url => `<img src="${url}">`).join("");
-                html += `
-                    <b>${species.scientific_name}</b> - ${species.vernacular_name}<br>
-                    Kingdom: ${species.kingdom} | Authorship: ${species.authorship} | Extinct: ${species.extinct ? "Yes" : "No"}<br>
-                    <div class="carousel">${imgs}</div><br>
-                `;
-            });
+            const title = document.createElement("h4");
+            title.textContent = animal.vernacularName || animal.scientificName || "Unknown";
+            card.appendChild(title);
 
-            familyCard.innerHTML = html;
-            resultDiv.appendChild(familyCard);
-        });
+            const info = document.createElement("p");
+            info.innerHTML = `
+                Scientific: ${animal.scientificName || "-"}<br>
+                Kingdom: ${animal.kingdom || "-"}<br>
+                Habitats: ${(animal.habitats || []).join(", ") || "-"}<br>
+                Threat: ${(animal.threatStatuses || []).join(", ") || "-"}<br>
+                Extinct: ${animal.extinct ? "Yes" : "No"}
+            `;
+            card.appendChild(info);
 
-    } catch(err) {
-        loadingDiv.style.display = "none";
-        console.error("Fetch Error:", err);
-        resultDiv.innerHTML = `<p style="color:red;"><b>API Error. See console.</b></p>`;
+            const imgs = Array.isArray(animal.images) ? animal.images.filter(Boolean) : [];
+            if (imgs.length) {
+                const carousel = document.createElement("div");
+                carousel.className = "carousel";
+                imgs.forEach(url => {
+                    const img = document.createElement("img");
+                    carousel.appendChild(img);
+                    // Load images progressively
+                    loadImageAsync(img, url);
+                });
+                card.appendChild(carousel);
+            }
+
+            resultsContainer.appendChild(card);
+        }
+
+    } catch (err) {
+        console.error(err);
+        resultsContainer.innerHTML = `<div>Error: ${err.message}</div>`;
+    } finally {
+        loadingEl.style.display = "none";
     }
-});
+}
+
+document.getElementById("speciesForm").addEventListener("submit", runSearch);
 </script>
 </body>
 </html>
