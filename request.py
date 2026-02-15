@@ -1,79 +1,79 @@
-import requests
-from collections import defaultdict
+import httpx
+import asyncio
 
-GBIF_SEARCH_URL = "https://api.gbif.org/v1/species/search"
-GBIF_MEDIA_URL = "https://api.gbif.org/v1/species/{key}/media"
+GBIF_BASE = "https://api.gbif.org/v1"
+IMG_LIMIT_DEFAULT = 10
+REQ_TIMEOUT = 10
 
-def safe_join(items):
-    """Join list items safely"""
-    if not items:
-        return "N/A"
-    return ", ".join(items)
-
-def fetch_species(query: str, limit: int = 50):
-    """
-    Fetch species from GBIF API filtered to Animalia.
-    Returns list of species with images and info.
-    """
-    params = {
-        "q": query,
-        "rank": "SPECIES",
-        "limit": limit
-    }
-
+async def get_species_images(client: httpx.AsyncClient, species_key: int, image_limit: int = IMG_LIMIT_DEFAULT):
+    url = f"{GBIF_BASE}/occurrence/search"
+    params = {"taxonKey": species_key, "mediaType": "StillImage", "limit": image_limit}
     try:
-        resp = requests.get(GBIF_SEARCH_URL, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+        resp = await client.get(url, params=params, timeout=REQ_TIMEOUT)
+        if resp.status_code != 200:
+            return []
+        images = []
+        for occ in resp.json().get("results", []):
+            for media in occ.get("media", []):
+                ident = media.get("identifier")
+                if ident:
+                    images.append(ident)
+        return images
+    except httpx.RequestError:
+        return []
 
-    results = []
-
-    for item in data.get("results", []):
-        # Only include animals
-        if item.get("kingdom") != "Animalia":
-            continue
-
-        species_key = item.get("key")
-
-        # Fetch images for this species
+async def fetch_species_data(search_term: str, image_limit: int = IMG_LIMIT_DEFAULT):
+    async with httpx.AsyncClient(timeout=REQ_TIMEOUT) as client:
+        # 1️⃣ Search species first
+        search_url = f"{GBIF_BASE}/species/search"
+        params = {"datasetKey": "d7dddbf4-2cf0-4f39-9b2a-bb099caae36c", "q": search_term}
         try:
-            media_resp = requests.get(GBIF_MEDIA_URL.format(key=species_key), timeout=10)
-            media_resp.raise_for_status()
-            media_data = media_resp.json()
-            images = [m.get("identifier") for m in media_data.get("results", []) if m.get("type") == "StillImage"]
-        except Exception:
-            images = []
+            resp = await client.get(search_url, params=params)
+            if resp.status_code != 200:
+                return []
+        except httpx.RequestError:
+            return []
 
-        # Skip species with no images
-        if not images:
-            continue
+        results = resp.json().get("results", [])
+        extracted = []
 
-        results.append({
-            "scientific_name": item.get("canonicalName"),
-            "authorship": item.get("authorship") or item.get("rank"),
-            "kingdom": item.get("kingdom") or "Animalia",
-            "family": item.get("family") or "Unknown",
-            "vernacular_name": item.get("vernacularName") or "N/A",
-            "habitats": safe_join(item.get("habitats") or []),
-            "threat_statuses": safe_join(item.get("threatened") or []),
-            "extinct": item.get("taxonomicStatus") == "EXCLUDED",
-            "image_urls": images
-        })
+        # 2️⃣ Create tasks for image fetching but don’t block
+        image_tasks = []
 
-    if not results:
-        return {"error": "No animals found for this search."}
+        for item in results:
+            vernacular_name = None
+            for vn in item.get("vernacularNames", []):
+                if vn.get("language") == "eng":
+                    vernacular_name = vn.get("vernacularName")
+                    break
+            if not vernacular_name and item.get("vernacularNames"):
+                vernacular_name = item["vernacularNames"][0].get("vernacularName")
 
-    # Group by family
-    grouped = defaultdict(list)
-    for sp in results:
-        grouped[sp["family"]].append(sp)
+            if vernacular_name:
+                key = item.get("key")
+                extracted_item = {
+                    "scientificName": item.get("scientificName", ""),
+                    "authorship": item.get("authorship", ""),
+                    "kingdom": item.get("kingdom", ""),
+                    "habitats": item.get("habitats", []),
+                    "threatStatuses": item.get("threatStatuses", []),
+                    "extinct": item.get("extinct", False),
+                    "vernacularName": vernacular_name,
+                    "images": []  # will fill later asynchronously
+                }
+                extracted.append(extracted_item)
 
-    grouped_list = [{"family": fam, "species": sp_list} for fam, sp_list in grouped.items()]
+                if key:
+                    # Start image fetch task but don’t await here
+                    task = asyncio.create_task(get_species_images(client, key, image_limit))
+                    image_tasks.append((len(extracted) - 1, task))
 
-    return {
-        "query": query,
-        "count": len(results),
-        "groups": grouped_list
-    }
+        # 3️⃣ Gather images concurrently
+        if image_tasks:
+            for idx, task in image_tasks:
+                try:
+                    extracted[idx]["images"] = await task
+                except Exception:
+                    extracted[idx]["images"] = []
+
+        return extracted
