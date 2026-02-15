@@ -1,23 +1,39 @@
-from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-from request import fetch_species
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
+from request import fetch_species_data
 
-app = FastAPI(debug=True)
-templates = Jinja2Templates(directory="templates")
+app = FastAPI()
 
-# Home page
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+# CORS (important for frontend calls)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Species API
+BASE_DIR = Path(__file__).resolve().parent
+
+
+@app.get("/hello")
+async def read_hello():
+    return {"message": "hello"}
+
+
 @app.get("/species")
-def species_api(name: str = Query(...)):
-    data = fetch_species(name)
-    return data
+async def get_species(name: str):
+    data = await fetch_species_data(name)
+    return {"data": data}
 
-# Status route
-@app.get("/status")
-def status():
-    return {"message": "Server is running!"}
+
+@app.get("/", response_class=FileResponse)
+async def return_site():
+    return FileResponse(
+        BASE_DIR / "templates" / "index.html",
+        media_type="text/html"
+    )
+
+
