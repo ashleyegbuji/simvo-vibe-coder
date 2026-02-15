@@ -6,10 +6,17 @@ from request import fetch_species_data
 
 app = FastAPI()
 
-# CORS (important for frontend calls)
+# ✅ CORS setup: allow localhost and deployed Vercel URLs
+origins = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "https://simvo-vibe-coder-6941.vercel.app",  # production
+    "https://simvo-vibe-coder-jxau.vercel.app"   # preview
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,5 +42,4 @@ async def return_site():
         BASE_DIR / "templates" / "index.html",
         media_type="text/html"
     )
-
 
